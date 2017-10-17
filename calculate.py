@@ -6,89 +6,14 @@ import collections
 import math
 import matplotlib.pyplot as plt
 import numpy
-
-#Definitions
-class Toroid:
-    def __init__(self, height, inner_radius, outer_radius):
-        self.h = height
-        self.inner_radius = inner_radius
-        self.outer_radius = outer_radius
-
-    def area(self):
-        return self.h * (self.outer_radius - self.inner_radius)
-
-    def __str__(self):
-        return "Toroid(heigt=%f, inner_radius=%f, outer_radius=%f)" %(self.h,
-                self.inner_radius, self.outer_radius)
-        def volume(self):
-            return math.pi * self.h * ( (self.outer_radius ** 2)
-                    - (self.inner_radius ** 2) )
-
-class Wire:
-    def __init__(self, copper_diameter, insulation_thickness=0.000017, name=''):
-        self.copper_diameter = copper_diameter
-        self.insulation_thickness = insulation_thickness
-        self.name = name
-    def diameter(self):
-        return 2.0 * self.insulation_thickness + self.copper_diameter
-    def radius(self):
-        return self.diameter() / 2
-    def __str__(self):
-        return 'Wire:%s(diameter=%f)' % (self.name, self.diameter())
-
-class Layer:
-    def __init__(self, turns, wire_length, wire):
-        self.turns = turns
-        self.wire_length = wire_length
-        self.wire = wire
-
-    def __str__(self):
-        return 'Layer(turns= %f, wire_length= %f m, resistance= %f Ω)' % (self.turns, self.wire_length, self.resistance())
-
-    def resistance(self):
-        return 1.68e-8 * self.wire_length / (math.pi * (self.wire.radius() **
-            2))
-
-class Stack(list):
-    def __init__(self):
-        self.layers = []
-    def add_layer(self, layer):
-        self.layers.append(layer)
-    def resistance(self):
-        resistance = 0.0
-        for l in self.layers:
-            resistance = resistance + l.resistance()
-        return resistance
-    def turns(self):
-        t = 0.0
-        for l in self.layers:
-            t = t + l.turns
-        return t
-    def wire_length(self):
-        wl = 0.0
-        for l in self.layers:
-            wl = wl + l.wire_length
-        return wl
-    def thickness(self):
-        th = 0.0
-        for l in self.layers:
-            th += l.wire.diameter()
-            th += 0.0006 #0.6 mm for inter winding insulation
-        return th
-    def __str__(self):
-        cable = self.layers[0].wire.name
-        retval = 'Stack(wire: %s, resistance= %f Ω, turns= %f, wire length= %f m, layers=[' % (cable, self.resistance(), self.turns(), self.wire_length())
-        for l in self.layers:
-            retval += '%.1f, ' % l.turns
-        retval += ']'
-        return retval
+import winding
 
 def fit(core, wire, turns, wrap_thickness = 0.0):
     rt = turns
-    stack = Stack()
+    stack = winding.Stack()
     radius = core.inner_radius - wrap_thickness
-    h = core.h + 2 * wrap_thickness
-    l = core.outer_radius - core.inner_radius + 2 * wrap_thickness
+    h = core.h + 2.0 * wrap_thickness
+    l = core.outer_radius - core.inner_radius + 2.0 * wrap_thickness
     bloated_radius = wire.radius() * 1.12
     while rt > 0:
         radius = radius - bloated_radius
@@ -103,7 +28,7 @@ def fit(core, wire, turns, wrap_thickness = 0.0):
             raise('cannot fit a single turn')
         rt = rt - t
         circ = 2.0 * h + 2.0 * l
-        stack.add_layer(Layer(turns= t, wire_length= (circ * t), wire= wire))
+        stack.add_layer(winding.Layer(turns= t, wire_length= (circ * t), wire= wire))
         radius = radius - bloated_radius #yes, a second time.
         h = h + bloated_radius * 2
         l = l + bloated_radius * 2
@@ -133,19 +58,6 @@ def calculate_power(stackp, stacks, voltage_primary):
     plt.show()
 
 
-#----------------------------------------------
-#create the full awg series of cables
-
-wires = {}
-wire_list = []
-for n in range(40):
-    exponent = (2.1104 - (0.11594 * n))
-    diameter = math.pow(math.e, exponent) / 1000 #in meters, from mm
-    name = 'awg%s' % n
-    wire = Wire(diameter, name=name)
-    wires[name] = wire
-    wire_list.append(wire)
-
 def optimize_wire(core, turns_primary, turns_secondary, insulation_thickness):
     ratio = turns_primary / turns_secondary
     logger.debug('Ratio is %f' % ratio)
@@ -153,8 +65,9 @@ def optimize_wire(core, turns_primary, turns_secondary, insulation_thickness):
     wire_primary_index = 39
 
     while wire_primary_index >= 6:
-        wire_primary = wire_list[wire_primary_index]
+        wire_primary = winding.wire_list[wire_primary_index]
         logger.debug('Trying winding primary with %s ...' % wire_primary.name)
+        logger.debug(wire_primary)
         wire_primary_index -= 1
         try:
             stack_primary = fit(core, wire_primary, turns_primary,
@@ -166,7 +79,7 @@ def optimize_wire(core, turns_primary, turns_secondary, insulation_thickness):
                 break
             wire_secondary_index = wire_primary_index
             while wire_secondary_index >= 0:
-                wire_secondary = wire_list[wire_secondary_index]
+                wire_secondary = winding.wire_list[wire_secondary_index]
                 logger.debug('\tTrying winding secondary with %s ...'
                         % wire_secondary.name)
                 wire_secondary_index -= 1
@@ -206,37 +119,3 @@ def calculate_max_current(primary, secondary, max_waste_power):
             break
     return best_current
 
-#----------------------------------------------
-#Variables
-core = Toroid(height=51.0 / 1000, inner_radius=70.0 / 1000 /2,
-        outer_radius= 108.0 /1000 / 2)
-frequency = 60.0
-voltage_primary = 120.0
-voltage_secondary = 90.0
-magnetic_field = 1.2 #teslas
-max_wasted_power = 15.0 #watts
-
-
-
-#----------------------------------------------
-#Calculation
-insulation_thickness = 0.25/1000 #0.125mm mylar, 50% overlap
-ratio = voltage_primary / voltage_secondary
-turns_primary = voltage_primary / 4.44 / core.area() / frequency/ magnetic_field
-turns_secondary = turns_primary / ratio
-print 'Core geometry: %s, core area: %.5f m^2' % (core, core.area())
-print "Electrical input is %.1f volts at %.1f hertz" % (voltage_primary, frequency)
-
-
-(p, s) = optimize_wire(core, turns_primary, turns_secondary, insulation_thickness)
-print 'Primary is:'
-print p
-print p.layers[0]
-print 'Secondary is:'
-print s
-sc = calculate_max_current(p, s, max_wasted_power)
-print 'Maximum secondary current is: %.1f a' % sc
-voltage_drop = sc * s.resistance()
-
-print 'Voltage drop at full load: %.2f v (%.1f %%)' % (voltage_drop, voltage_drop * 100/ voltage_secondary)
-print 'Input power: %.1f w' % (voltage_secondary * sc + max_wasted_power / 2)
