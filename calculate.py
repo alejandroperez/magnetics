@@ -6,6 +6,7 @@ import collections
 import math
 import matplotlib.pyplot as plt
 import numpy
+import sys
 import winding
 
 def fit(core, wire, turns, wrap_thickness = 0.0):
@@ -39,7 +40,7 @@ def calculate_power(stackp, stacks, voltage_primary):
     logger.info('Turn ratio: %s' % turn_ratio)
     rp = stackp.resistance()
     rs = stacks.resistance()
-    current_secondary = numpy.arange(0.1, 100, 1)
+    current_secondary = numpy.arange(0.01, 100, 0.01)
     voltage_secondary = []
     dissipated_power = []
     for cs in current_secondary:
@@ -62,6 +63,7 @@ def optimize_wire(core, turns_primary, turns_secondary, insulation_thickness):
     ratio = turns_primary / turns_secondary
     logger.debug('Ratio is %f' % ratio)
     target_empty_area = math.pi * (core.inner_radius ** 2) / 2.0
+    best_resistance = float("inf")
     wire_primary_index = 39
 
     while wire_primary_index >= 6:
@@ -77,7 +79,9 @@ def optimize_wire(core, turns_primary, turns_secondary, insulation_thickness):
             if clear_area < target_empty_area:
                 logger.debug('Primary alone does not leave enough clear space.')
                 break
-            wire_secondary_index = wire_primary_index
+            target_res_sec = stack_primary.resistance() / (ratio ** 2)
+            logger.debug('Primary resistance is: %.2f Ω. Secondary target is %.2f Ω.' % (stack_primary.resistance(), target_res_sec))
+            wire_secondary_index = 39
             while wire_secondary_index >= 0:
                 wire_secondary = winding.wire_list[wire_secondary_index]
                 logger.debug('\tTrying winding secondary with %s ...'
@@ -92,8 +96,12 @@ def optimize_wire(core, turns_primary, turns_secondary, insulation_thickness):
                         logger.debug('\tBoth stacks do not leave enough clear area.')
                         break
                     else:
-                        best_primary = stack_primary
-                        best_secondary = stack_secondary
+                        res = stack_primary.resistance() + stack_secondary.resistance() * (ratio **2 )
+                        if best_resistance > res:
+                            logger.info('Found best (equivalent) resistance of %.2f Ω' % res)
+                            best_resistance = res
+                            best_primary = stack_primary
+                            best_secondary = stack_secondary
                 except:
                     logger.debug('\tSecondary does not phisically fit!')
                     break
@@ -111,7 +119,7 @@ def calculate_wasted_power(primary, secondary, sec_current):
     return wasted
 
 def calculate_max_current(primary, secondary, max_waste_power):
-    for current in numpy.arange(0.1, 100, 0.05):
+    for current in numpy.arange(0.01, 100, 0.01):
         w = calculate_wasted_power(primary, secondary, current)
         if w <= max_waste_power:
             best_current = current

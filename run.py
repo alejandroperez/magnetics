@@ -3,7 +3,7 @@
 import logging
 logging.basicConfig()
 logger = logging.getLogger()
-#logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.INFO)
 import collections
 import numpy
 import winding
@@ -48,4 +48,4 @@ u0 = math.pi * 4e-7
 L = u0 * 42400.0 * (turns_primary ** 2) * core.h / (2 * math.pi) * math.log(core.outer_radius / core.inner_radius, math.e)
 Xl = math.pi * 2 * L * frequency
 print 'Inductance is: %f H. Reactance is: (%.2f, %.2f i)'% (L, p.resistance(), Xl)
-print 'Magnetizing current is: %.2f' % (voltage_primary / math.sqrt ((Xl ** 2) + (p.resistance() ** 2)))
+print 'Magnetizing current is: %.3f' % (voltage_primary / math.sqrt ((Xl ** 2) + (p.resistance() ** 2)))
